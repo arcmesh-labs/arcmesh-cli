@@ -52,8 +52,28 @@ def _wsl_distro_name() -> str:
     raise RuntimeError("Could not determine WSL distro name")
 
 
+_RESOLVE_COMMANDS = {"uvx", "python", "python3"}
+
+
+def _which_in_wsl(command: str) -> str:
+    try:
+        result = subprocess.run(
+            ["which", command],
+            capture_output=True, text=True, timeout=5,
+        )
+        resolved = result.stdout.strip()
+        if result.returncode == 0 and resolved:
+            return resolved
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return command
+
+
 def _wrap_for_wsl(cfg: dict, distro: str) -> dict:
-    shell_cmd = shlex.join([cfg["command"], *cfg.get("args", [])])
+    command = cfg["command"]
+    if command in _RESOLVE_COMMANDS:
+        command = _which_in_wsl(command)
+    shell_cmd = shlex.join([command, *cfg.get("args", [])])
     return {**cfg, "command": "wsl.exe", "args": ["-d", distro, "-e", "bash", "-lc", shell_cmd]}
 
 
