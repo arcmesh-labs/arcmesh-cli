@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import subprocess
 from pathlib import Path
 
 import click
@@ -23,6 +24,29 @@ def _config_path(directory: Path) -> Path:
     return directory / MCP_DIR / CONFIG_FILE
 
 
+def _is_wsl() -> bool:
+    try:
+        return "microsoft" in Path("/proc/version").read_text().lower()
+    except OSError:
+        return False
+
+
+def _wsl_claude_desktop_config_path() -> Path:
+    try:
+        result = subprocess.run(
+            ["cmd.exe", "/c", "echo", "%USERNAME%"],
+            capture_output=True, text=True, timeout=5,
+        )
+        windows_user = result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        windows_user = ""
+
+    if not windows_user or windows_user == "%USERNAME%":
+        raise RuntimeError("Could not determine Windows username from cmd.exe")
+
+    return Path(f"/mnt/c/Users/{windows_user}/AppData/Roaming/Claude/claude_desktop_config.json")
+
+
 def _claude_desktop_config_path() -> Path:
     system = platform.system()
     if system == "Darwin":
@@ -30,7 +54,8 @@ def _claude_desktop_config_path() -> Path:
     if system == "Windows":
         appdata = os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")
         return Path(appdata) / "Claude" / "claude_desktop_config.json"
-    # Linux / WSL
+    if _is_wsl():
+        return _wsl_claude_desktop_config_path()
     return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
 
 
@@ -76,7 +101,12 @@ def init(force: bool):
 
     console.print(f"[green]✓[/green] Initialized MCP config at [bold]{config_path}[/bold]")
 
-    desktop_path = _claude_desktop_config_path()
+    try:
+        desktop_path = _claude_desktop_config_path()
+    except RuntimeError as exc:
+        console.print(f"\n[red]Could not locate Claude Desktop config:[/red] {exc}")
+        return
+
     if desktop_path.exists():
         console.print(
             f"\n[green]✓[/green] Claude Desktop config found:\n"
@@ -149,7 +179,12 @@ def sync(force: bool):
     config_path = _config_path(Path.cwd())
     config = _load_config(config_path)
 
-    desktop_path = _claude_desktop_config_path()
+    try:
+        desktop_path = _claude_desktop_config_path()
+    except RuntimeError as exc:
+        console.print(f"[red]Could not locate Claude Desktop config:[/red] {exc}")
+        raise click.Abort()
+
     if not desktop_path.exists():
         console.print(
             f"[red]Claude Desktop config not found.[/red]\n"
