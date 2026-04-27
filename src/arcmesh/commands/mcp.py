@@ -142,6 +142,50 @@ def remove(name: str):
     console.print(f"[green]✓[/green] Removed server [bold]{name}[/bold]")
 
 
+@mcp.command("sync")
+@click.option("--force", is_flag=True, help="Overwrite servers that already exist in Claude Desktop config.")
+def sync(force: bool):
+    """Sync servers from .mcp/config.json into Claude Desktop config."""
+    config_path = _config_path(Path.cwd())
+    config = _load_config(config_path)
+
+    desktop_path = _claude_desktop_config_path()
+    if not desktop_path.exists():
+        console.print(
+            f"[red]Claude Desktop config not found.[/red]\n"
+            f"  Expected at: [dim]{desktop_path}[/dim]"
+        )
+        raise click.Abort()
+
+    desktop_config = _load_config(desktop_path)
+    mcp_servers: dict = desktop_config.setdefault("mcpServers", {})
+    local_servers: dict = config.get("servers", {})
+
+    if not local_servers:
+        console.print("[dim]No servers in .mcp/config.json — nothing to sync.[/dim]")
+        return
+
+    synced, skipped = [], []
+    for name, cfg in local_servers.items():
+        if name in mcp_servers and not force:
+            skipped.append(name)
+        else:
+            mcp_servers[name] = cfg
+            synced.append(name)
+
+    _save_config(desktop_path, desktop_config)
+
+    if synced:
+        names = ", ".join(f"[bold]{n}[/bold]" for n in synced)
+        console.print(f"[green]✓[/green] Synced {len(synced)} server(s) to Claude Desktop: {names}")
+    if skipped:
+        names = ", ".join(f"[bold]{n}[/bold]" for n in skipped)
+        console.print(
+            f"[yellow]![/yellow] Skipped {len(skipped)} existing server(s): {names}\n"
+            "  Use [bold]--force[/bold] to overwrite."
+        )
+
+
 @mcp.command("status")
 def status():
     """Show active MCP servers from local config."""
