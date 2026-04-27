@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 
 import click
@@ -20,6 +19,24 @@ DEFAULT_CONFIG = {
 
 def _config_path(directory: Path) -> Path:
     return directory / MCP_DIR / CONFIG_FILE
+
+
+def _load_config(config_path: Path) -> dict:
+    if not config_path.exists():
+        console.print(
+            "[red]No MCP config found.[/red] "
+            "Run [bold]arcmesh mcp init[/bold] first."
+        )
+        raise click.Abort()
+    try:
+        return json.loads(config_path.read_text())
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Failed to parse config:[/red] {exc}")
+        raise click.Abort()
+
+
+def _save_config(config_path: Path, config: dict) -> None:
+    config_path.write_text(json.dumps(config, indent=2) + "\n")
 
 
 @click.group()
@@ -47,28 +64,50 @@ def init(force: bool):
     console.print(f"[green]✓[/green] Initialized MCP config at [bold]{config_path}[/bold]")
 
 
+@mcp.command("add", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+@click.argument("name")
+@click.argument("command")
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def add(name: str, command: str, args: tuple[str, ...]):
+    """Add a server to the MCP config.
+
+    \b
+    Example:
+      mcp add filesystem npx -y @modelcontextprotocol/server-filesystem /tmp
+    """
+    config_path = _config_path(Path.cwd())
+    config = _load_config(config_path)
+
+    servers: dict = config.setdefault("servers", {})
+
+    if name in servers:
+        console.print(
+            f"[yellow]Server [bold]{name}[/bold] already exists.[/yellow] "
+            "Remove it from [bold].mcp/config.json[/bold] first."
+        )
+        raise click.Abort()
+
+    servers[name] = {"command": command, "args": list(args)}
+    _save_config(config_path, config)
+
+    args_display = " ".join(args) if args else "[dim]none[/dim]"
+    console.print(
+        f"[green]✓[/green] Added server [bold]{name}[/bold]\n"
+        f"  command: [cyan]{command}[/cyan]\n"
+        f"  args:    {args_display}"
+    )
+
+
 @mcp.command("status")
 def status():
     """Show active MCP servers from local config."""
     cwd = Path.cwd()
     config_path = _config_path(cwd)
-
-    if not config_path.exists():
-        console.print(
-            "[yellow]No MCP config found.[/yellow] "
-            "Run [bold]arcmesh mcp init[/bold] to create one."
-        )
-        return
-
-    try:
-        config = json.loads(config_path.read_text())
-    except json.JSONDecodeError as exc:
-        console.print(f"[red]Failed to parse config:[/red] {exc}")
-        raise click.Abort()
+    config = _load_config(config_path)
 
     servers: dict = config.get("servers", {})
 
-    console.print(f"[dim]Config:[/dim] {config_path}\n")
+    console.print(f"[dim]Config:[/dim] {config_path.relative_to(Path.cwd())}\n")
 
     if not servers:
         console.print("[dim]No servers configured.[/dim]")

@@ -14,7 +14,7 @@ dependencies = [
 
 [project.scripts]
 arcmesh = "arcmesh.cli:cli"
-mcp = "arcmesh.cli:cli"
+mcp = "arcmesh.commands.mcp:mcp"
 
 [tool.setuptools.packages.find]
 where = ["src"]
