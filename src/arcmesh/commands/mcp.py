@@ -98,6 +98,25 @@ def add(name: str, command: str, args: tuple[str, ...]):
     )
 
 
+@mcp.command("remove")
+@click.argument("name")
+def remove(name: str):
+    """Remove a server from the MCP config."""
+    config_path = _config_path(Path.cwd())
+    config = _load_config(config_path)
+
+    servers: dict = config.get("servers", {})
+
+    if name not in servers:
+        console.print(f"[red]Server [bold]{name}[/bold] not found in config.[/red]")
+        raise click.Abort()
+
+    del servers[name]
+    _save_config(config_path, config)
+
+    console.print(f"[green]✓[/green] Removed server [bold]{name}[/bold]")
+
+
 @mcp.command("status")
 def status():
     """Show active MCP servers from local config."""
