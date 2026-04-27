@@ -1,4 +1,6 @@
 import json
+import os
+import platform
 from pathlib import Path
 
 import click
@@ -19,6 +21,17 @@ DEFAULT_CONFIG = {
 
 def _config_path(directory: Path) -> Path:
     return directory / MCP_DIR / CONFIG_FILE
+
+
+def _claude_desktop_config_path() -> Path:
+    system = platform.system()
+    if system == "Darwin":
+        return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    if system == "Windows":
+        appdata = os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")
+        return Path(appdata) / "Claude" / "claude_desktop_config.json"
+    # Linux / WSL
+    return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
 
 
 def _load_config(config_path: Path) -> dict:
@@ -62,6 +75,18 @@ def init(force: bool):
     config_path.write_text(json.dumps(DEFAULT_CONFIG, indent=2) + "\n")
 
     console.print(f"[green]✓[/green] Initialized MCP config at [bold]{config_path}[/bold]")
+
+    desktop_path = _claude_desktop_config_path()
+    if desktop_path.exists():
+        console.print(
+            f"\n[green]✓[/green] Claude Desktop config found:\n"
+            f"  [bold]{desktop_path}[/bold]"
+        )
+    else:
+        console.print(
+            f"\n[yellow]![/yellow] Claude Desktop config not found.\n"
+            f"  Expected at: [dim]{desktop_path}[/dim]"
+        )
 
 
 @mcp.command("add", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
