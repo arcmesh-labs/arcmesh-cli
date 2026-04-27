@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -29,6 +30,31 @@ def _is_wsl() -> bool:
         return "microsoft" in Path("/proc/version").read_text().lower()
     except OSError:
         return False
+
+
+def _wsl_distro_name() -> str:
+    # WSL sets this in every session — fastest and most reliable source.
+    name = os.environ.get("WSL_DISTRO_NAME", "").strip()
+    if name:
+        return name
+    # Fallback: parse wsl.exe -l -q (output is UTF-16 LE on Windows).
+    try:
+        result = subprocess.run(
+            ["wsl.exe", "-l", "-q"],
+            capture_output=True, timeout=5,
+        )
+        text = result.stdout.decode("utf-16-le", errors="ignore")
+        distros = [ln.strip("\x00").strip() for ln in text.splitlines() if ln.strip("\x00").strip()]
+        if distros:
+            return distros[0]
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    raise RuntimeError("Could not determine WSL distro name")
+
+
+def _wrap_for_wsl(cfg: dict, distro: str) -> dict:
+    shell_cmd = shlex.join([cfg["command"], *cfg.get("args", [])])
+    return {**cfg, "command": "wsl.exe", "args": ["-d", distro, "-e", "bash", "-lc", shell_cmd]}
 
 
 def _wsl_claude_desktop_config_path() -> Path:
@@ -200,37 +226,33 @@ def sync(force: bool):
         console.print("[dim]No servers in .mcp/config.json — nothing to sync.[/dim]")
         return
 
+    wsl = _is_wsl()
+    if wsl:
+        try:
+            distro = _wsl_distro_name()
+        except RuntimeError as exc:
+            console.print(f"[red]Could not determine WSL distro name:[/red] {exc}")
+            raise click.Abort()
+
     synced, skipped = [], []
     for name, cfg in local_servers.items():
         if name in mcp_servers and not force:
             skipped.append(name)
         else:
-            mcp_servers[name] = cfg
+            mcp_servers[name] = _wrap_for_wsl(cfg, distro) if wsl else cfg
             synced.append(name)
 
     _save_config(desktop_path, desktop_config)
 
     if synced:
         names = ", ".join(f"[bold]{n}[/bold]" for n in synced)
-        console.print(f"[green]✓[/green] Synced {len(synced)} server(s) to Claude Desktop: {names}")
+        suffix = f" [dim](wrapped for WSL distro {distro})[/dim]" if wsl else ""
+        console.print(f"[green]✓[/green] Synced {len(synced)} server(s) to Claude Desktop: {names}{suffix}")
     if skipped:
         names = ", ".join(f"[bold]{n}[/bold]" for n in skipped)
         console.print(
             f"[yellow]![/yellow] Skipped {len(skipped)} existing server(s): {names}\n"
             "  Use [bold]--force[/bold] to overwrite."
-        )
-
-    if synced and _is_wsl():
-        synced_commands = sorted({local_servers[n]["command"] for n in synced})
-        where_checks = "\n".join(f"    where.exe {cmd}" for cmd in synced_commands)
-        console.print(
-            "\n[yellow]⚠[/yellow]  Du kjører i WSL. Claude Desktop kjører på Windows.\n"
-            "   MCP-servere må være tilgjengelige på Windows-siden.\n"
-            "\n"
-            "   Sjekk at kommandoen finnes på Windows:\n"
-            f"{where_checks}\n"
-            "\n"
-            "   Hvis ikke: installer Node.js på Windows → https://nodejs.org"
         )
 
 
