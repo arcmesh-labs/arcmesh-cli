@@ -220,6 +220,19 @@ def sync(force: bool):
             "  Use [bold]--force[/bold] to overwrite."
         )
 
+    if synced and _is_wsl():
+        synced_commands = sorted({local_servers[n]["command"] for n in synced})
+        where_checks = "\n".join(f"    where.exe {cmd}" for cmd in synced_commands)
+        console.print(
+            "\n[yellow]⚠[/yellow]  Du kjører i WSL. Claude Desktop kjører på Windows.\n"
+            "   MCP-servere må være tilgjengelige på Windows-siden.\n"
+            "\n"
+            "   Sjekk at kommandoen finnes på Windows:\n"
+            f"{where_checks}\n"
+            "\n"
+            "   Hvis ikke: installer Node.js på Windows → https://nodejs.org"
+        )
+
 
 @mcp.command("status")
 def status():
