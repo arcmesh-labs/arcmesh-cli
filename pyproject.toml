@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arcmesh"
+version = "0.1.0"
+description = "CLI for managing MCP (Model Context Protocol) configurations"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1",
+    "rich>=13.0",
+]
+
+[project.scripts]
+arcmesh = "arcmesh.cli:cli"
+mcp = "arcmesh.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]

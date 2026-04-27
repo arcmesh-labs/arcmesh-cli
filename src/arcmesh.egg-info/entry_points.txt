@@ -1,0 +1,3 @@
+[console_scripts]
+arcmesh = arcmesh.cli:cli
+mcp = arcmesh.cli:cli
