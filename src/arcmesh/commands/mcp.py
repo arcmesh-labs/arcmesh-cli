@@ -20,6 +20,69 @@ DEFAULT_CONFIG = {
     "servers": {}
 }
 
+_FASTMCP_TEMPLATE = '''\
+from pathlib import Path
+
+from mcp.server.fastmcp import FastMCP
+
+BASE_DIR = Path("{project_path}")
+
+mcp = FastMCP("{name}")
+
+
+def _check_path(path: str) -> tuple[Path, str | None]:
+    target = (BASE_DIR / path).resolve()
+    if not str(target).startswith(str(BASE_DIR.resolve())):
+        return target, "Error: path is outside BASE_DIR"
+    return target, None
+
+
+@mcp.tool()
+def read_file(path: str) -> str:
+    """Read and return the contents of a file."""
+    target, err = _check_path(path)
+    if err:
+        return err
+    if not target.is_file():
+        return f"Error: not a file: {{path}}"
+    return target.read_text()
+
+
+@mcp.tool()
+def list_directory(path: str) -> list[str]:
+    """List files and directories in a directory."""
+    target, err = _check_path(path)
+    if err:
+        return [err]
+    if not target.is_dir():
+        return [f"Error: not a directory: {{path}}"]
+    return [entry.name for entry in sorted(target.iterdir())]
+
+
+@mcp.tool()
+def search_content(path: str, query: str) -> list[str]:
+    """Recursively search for files containing query, returning matching paths and lines."""
+    target, err = _check_path(path)
+    if err:
+        return [err]
+    if not target.is_dir():
+        return [f"Error: not a directory: {{path}}"]
+    results = []
+    for file in target.rglob("*"):
+        if file.is_file():
+            try:
+                for lineno, line in enumerate(file.read_text().splitlines(), 1):
+                    if query in line:
+                        results.append(f"{{file}}:{{lineno}}: {{line}}")
+            except (OSError, UnicodeDecodeError):
+                pass
+    return results
+
+
+if __name__ == "__main__":
+    mcp.run()
+'''
+
 
 def _config_path(directory: Path) -> Path:
     return directory / MCP_DIR / CONFIG_FILE
@@ -213,14 +276,62 @@ def init(force: bool):
         )
 
 
+def _add_wizard(name: str, servers: dict, config_path: Path, config: dict) -> None:
+    import questionary
+
+    server_type = questionary.select(
+        "Server type:",
+        choices=["Remote (URL)", "Local script (existing)", "Local script (new)"],
+    ).ask()
+    if server_type is None:
+        raise click.Abort()
+
+    if server_type == "Remote (URL)":
+        url = questionary.text("URL:").ask()
+        if url is None:
+            raise click.Abort()
+        entry = {"command": "url", "args": [url]}
+
+    elif server_type == "Local script (existing)":
+        path = questionary.path("Path to script:").ask()
+        if path is None:
+            raise click.Abort()
+        if not Path(path).exists():
+            console.print(f"[red]File not found:[/red] {path}")
+            raise click.Abort()
+        entry = {"command": "python", "args": [path]}
+
+    else:  # Local script (new)
+        path = questionary.path("Output path:", default=f"{name}_server.py").ask()
+        if path is None:
+            raise click.Abort()
+        out = Path(path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(_FASTMCP_TEMPLATE.format(name=name, project_path=Path.cwd()))
+        console.print(f"[green]✓[/green] Created [bold]{out}[/bold]")
+        entry = {"command": "python", "args": [str(out.resolve())]}
+
+    servers[name] = entry
+    _save_config(config_path, config)
+
+    args_display = " ".join(entry["args"]) if entry["args"] else "[dim]none[/dim]"
+    console.print(
+        f"[green]✓[/green] Added server [bold]{name}[/bold]\n"
+        f"  command: [cyan]{entry['command']}[/cyan]\n"
+        f"  args:    {args_display}"
+    )
+
+
 @mcp.command("add", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 @click.argument("name")
-@click.argument("command")
+@click.argument("command", required=False, default=None)
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
-def add(name: str, command: str, args: tuple[str, ...]):
+def add(name: str, command: str | None, args: tuple[str, ...]):
     """Add a server to the MCP config.
 
     \b
+    Without a command, starts an interactive wizard.
+
     Example:
       mcp add filesystem npx -y @modelcontextprotocol/server-filesystem /tmp
     """
@@ -235,6 +346,10 @@ def add(name: str, command: str, args: tuple[str, ...]):
             "Remove it from [bold].mcp/config.json[/bold] first."
         )
         raise click.Abort()
+
+    if command is None:
+        _add_wizard(name, servers, config_path, config)
+        return
 
     servers[name] = {"command": command, "args": list(args)}
     _save_config(config_path, config)

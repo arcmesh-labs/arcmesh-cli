@@ -5,3 +5,4 @@ Summary: CLI for managing MCP (Model Context Protocol) configurations
 Requires-Python: >=3.10
 Requires-Dist: click>=8.1
 Requires-Dist: rich>=13.0
+Requires-Dist: questionary>=2.0
