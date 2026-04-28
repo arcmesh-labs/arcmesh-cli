@@ -31,6 +31,8 @@ mcp = FastMCP("{name}")
 
 
 def _check_path(path: str) -> tuple[Path, str | None]:
+    if path in ("", "/"):
+        return BASE_DIR.resolve(), None
     target = (BASE_DIR / path).resolve()
     if not str(target).startswith(str(BASE_DIR.resolve())):
         return target, "Error: path is outside BASE_DIR"
@@ -49,14 +51,14 @@ def read_file(path: str) -> str:
 
 
 @mcp.tool()
-def list_directory(path: str) -> list[str]:
+def list_directory(path: str) -> str:
     """List files and directories in a directory."""
     target, err = _check_path(path)
     if err:
-        return [err]
+        return err
     if not target.is_dir():
-        return [f"Error: not a directory: {{path}}"]
-    return [entry.name for entry in sorted(target.iterdir())]
+        return f"Error: not a directory: {{path}}"
+    return "\n".join(entry.name for entry in sorted(target.iterdir()))
 
 
 @mcp.tool()
