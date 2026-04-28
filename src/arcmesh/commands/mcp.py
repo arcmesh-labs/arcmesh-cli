@@ -25,7 +25,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-BASE_DIR = Path("{project_path}")
+BASE_DIR = Path(r"{project_path}")
 
 mcp = FastMCP("{name}")
 
