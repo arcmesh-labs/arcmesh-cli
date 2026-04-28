@@ -58,7 +58,7 @@ def list_directory(path: str) -> str:
         return err
     if not target.is_dir():
         return f"Error: not a directory: {{path}}"
-    return "\n".join(entry.name for entry in sorted(target.iterdir()))
+    return "\\n".join(entry.name for entry in sorted(target.iterdir()))
 
 
 @mcp.tool()
