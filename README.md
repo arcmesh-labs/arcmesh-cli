@@ -8,11 +8,35 @@ Claude Desktop (and other MCP clients) store server configs in a global JSON fil
 
 ## Installation
 
+**From PyPI:**
 ```
 pip install arcmesh
 ```
 
+**From GitHub (latest):**
+```
+pip install git+https://github.com/arcmesh-labs/arcmesh-cli.git
+```
+
 Both `arcmesh` and `mcp` are registered as entry points — the commands below work with either prefix.
+
+> **Windows note:** The `mcp` shorthand may conflict with the `mcp` package's own CLI. If you get unexpected errors, use `arcmesh mcp <command>` instead. For example: `arcmesh mcp init`, `arcmesh mcp add`, `arcmesh mcp sync`.
+
+---
+
+## Quick start — local repo in 4 steps
+
+```bash
+pip install git+https://github.com/arcmesh-labs/arcmesh-cli.git
+cd my-project
+arcmesh mcp init
+arcmesh mcp add my-project   # choose "Local script (new)"
+arcmesh mcp sync
+```
+
+Restart Claude Desktop — it can now read, list, and search files in your project.
+
+---
 
 ## Commands
 
@@ -32,25 +56,32 @@ Use `--force` to reinitialize an existing config.
 
 ---
 
-### `mcp add <name> <command> [args...]`
+### `mcp add <name> [command] [args...]`
 
-Adds a server entry to `.mcp/config.json`. Arguments after the command are passed through verbatim.
+Adds a server entry to `.mcp/config.json`.
+
+If `command` is omitted, an interactive wizard starts and guides you through three options:
+
+**Remote (URL)** — connects to an external MCP server by URL.
+
+**Local script (existing)** — points to an existing `.py` file on disk.
+
+**Local script (new)** — generates a ready-to-use `server.py` in your project with three tools: `read_file`, `list_directory`, and `search_content`, all scoped to your project folder. This is the recommended starting point for giving Claude Desktop access to a local repo.
+
+```
+$ mcp add my-repo
+? Server type: Local script (new)
+? Output path: my-repo_server.py
+✓ Created /your/project/my-repo_server.py
+✓ Added server my-repo
+```
+
+You can also pass arguments directly to skip the wizard:
 
 ```
 $ mcp add filesystem npx -y @modelcontextprotocol/server-filesystem /tmp
-✓ Added server filesystem
-  command: npx
-  args:    -y @modelcontextprotocol/server-filesystem /tmp
-
 $ mcp add github uvx mcp-server-github
-✓ Added server github
-  command: uvx
-  args:    mcp-server-github
-
 $ mcp add myserver python ~/tools/mcp/servers/myserver.py
-✓ Added server myserver
-  command: python
-  args:    ~/tools/mcp/servers/myserver.py
 ```
 
 Fails if a server with that name already exists.
@@ -90,19 +121,14 @@ Config: .mcp/config.json
 
 ### `mcp sync`
 
-Writes all servers from `.mcp/config.json` into the `mcpServers` key of Claude Desktop's config. Other keys in the Claude Desktop config are left untouched.
+Writes all servers from `.mcp/config.json` into the `mcpServers` key of Claude Desktop's config. Other keys are left untouched.
 
 ```
 $ mcp sync
 ✓ Synced 2 server(s) to Claude Desktop: github, myserver
 ```
 
-Servers that already exist in the Claude Desktop config are skipped by default. Use `--force` to overwrite them:
-
-```
-$ mcp sync --force
-✓ Synced 2 server(s) to Claude Desktop: github, myserver
-```
+Use `--force` to overwrite servers that already exist in Claude Desktop's config.
 
 **WSL auto-detection:** when running in WSL, `sync` automatically wraps every command with `wsl.exe -d <distro> -e bash -lc ...` so Claude Desktop (running on Windows) can launch them. For `python` and `python3` commands, ArcMesh also detects a suitable venv before wrapping (see below).
 
@@ -110,14 +136,14 @@ $ mcp sync --force
 
 ### `mcp unwrap`
 
-Reads `mcpServers` from Claude Desktop's config and imports any `wsl.exe`-wrapped entries back into `.mcp/config.json`, reversing what `sync` produced. Useful for migrating manually-written entries or bootstrapping a project config from an existing Claude Desktop setup.
+Reads `mcpServers` from Claude Desktop's config and imports any `wsl.exe`-wrapped entries back into `.mcp/config.json`, reversing what `sync` produced. Useful for migrating manually-written entries or bootstrapping from an existing Claude Desktop setup.
 
 ```
 $ mcp unwrap
 ✓ Imported 2 server(s): github, myserver
 ```
 
-Entries that already exist in `.mcp/config.json` are skipped by default. Use `--force` to overwrite them. Non-wrapped entries (those that don't use `wsl.exe`) are reported separately and left untouched.
+Entries that already exist in `.mcp/config.json` are skipped by default. Use `--force` to overwrite them. Non-wrapped entries are reported separately and left untouched.
 
 ```
 $ mcp unwrap
@@ -139,13 +165,15 @@ When `command` is `python` or `python3`, `sync` checks for a virtualenv containi
 | 2 | `.venv` sibling to the server `.py` file |
 | 3 | `venv` sibling to the server `.py` file |
 
-A venv is considered valid if `<venv>/lib/python*/site-packages/mcp` exists. If a valid venv is found, the sync output wraps the command as:
+If a valid venv is found, the sync output wraps the command as:
 
 ```
 source /path/to/venv/bin/activate && python server.py [args...]
 ```
 
 If no venv is found, `sync` falls back to resolving the full `python` path via `which` inside WSL.
+
+---
 
 ## Claude Desktop config location
 
