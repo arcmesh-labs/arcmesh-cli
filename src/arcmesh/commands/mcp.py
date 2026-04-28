@@ -69,12 +69,60 @@ def _which_in_wsl(command: str) -> str:
     return command
 
 
+def _find_mcp_venv(args: list[str]) -> "Path | None":
+    server_file = next((Path(a) for a in args if a.endswith(".py")), None)
+    candidates = [Path.home() / "tools" / "mcp" / "venv"]
+    if server_file:
+        candidates += [server_file.parent / ".venv", server_file.parent / "venv"]
+    for venv in candidates:
+        lib = venv / "lib"
+        if lib.is_dir() and any(lib.glob("python*/site-packages/mcp")):
+            return venv
+    return None
+
+
 def _wrap_for_wsl(cfg: dict, distro: str) -> dict:
     command = cfg["command"]
-    if command in _RESOLVE_COMMANDS:
-        command = _which_in_wsl(command)
-    shell_cmd = shlex.join([command, *cfg.get("args", [])])
+    args = cfg.get("args", [])
+    expanded_args = [str(Path(a).expanduser()) if a.startswith("~") else a for a in args]
+
+    shell_cmd = None
+    if command in {"python", "python3"}:
+        venv = _find_mcp_venv(args)
+        if venv:
+            shell_cmd = f"source {venv.expanduser()}/bin/activate && python {shlex.join(expanded_args)}"
+
+    if shell_cmd is None:
+        if command.startswith("source "):
+            shell_cmd = command
+        elif command == "source":
+            shell_cmd = " ".join(shlex.quote(a) if a != "&&" else "&&" for a in [command, *expanded_args])
+        else:
+            if command in _RESOLVE_COMMANDS:
+                command = _which_in_wsl(command)
+            shell_cmd = shlex.join([command, *expanded_args])
+
     return {**cfg, "command": "wsl.exe", "args": ["-d", distro, "-e", "bash", "-lc", shell_cmd]}
+
+
+def _unwrap_wsl(cfg: dict) -> "dict | None":
+    if cfg.get("command") != "wsl.exe":
+        return None
+    args = cfg.get("args", [])
+    if "-lc" not in args:
+        return None
+    shell_cmd = args[args.index("-lc") + 1]
+    if shell_cmd.startswith("source ") and " && " in shell_cmd:
+        _, _, rest = shell_cmd.partition(" && ")
+        tokens = shlex.split(rest)
+    else:
+        tokens = shlex.split(shell_cmd)
+    if tokens and tokens[0] == "bash" and "-c" in tokens:
+        tokens = shlex.split(tokens[tokens.index("-c") + 1])
+    if not tokens:
+        return None
+    command, *cmd_args = tokens
+    return {**cfg, "command": command, "args": cmd_args}
 
 
 def _wsl_claude_desktop_config_path() -> Path:
@@ -274,6 +322,61 @@ def sync(force: bool):
             f"[yellow]![/yellow] Skipped {len(skipped)} existing server(s): {names}\n"
             "  Use [bold]--force[/bold] to overwrite."
         )
+
+
+@mcp.command("unwrap")
+@click.option("--force", is_flag=True, help="Overwrite servers that already exist in .mcp/config.json.")
+def unwrap(force: bool):
+    """Import WSL-wrapped servers from Claude Desktop config into .mcp/config.json."""
+    try:
+        desktop_path = _claude_desktop_config_path()
+    except RuntimeError as exc:
+        console.print(f"[red]Could not locate Claude Desktop config:[/red] {exc}")
+        raise click.Abort()
+
+    if not desktop_path.exists():
+        console.print(
+            f"[red]Claude Desktop config not found.[/red]\n"
+            f"  Expected at: [dim]{desktop_path}[/dim]"
+        )
+        raise click.Abort()
+
+    desktop_config = _load_config(desktop_path)
+    mcp_servers: dict = desktop_config.get("mcpServers", {})
+
+    config_path = _config_path(Path.cwd())
+    config = _load_config(config_path)
+    servers: dict = config.setdefault("servers", {})
+
+    imported, skipped, not_wrapped = [], [], []
+    for name, cfg in mcp_servers.items():
+        unwrapped = _unwrap_wsl(cfg)
+        if unwrapped is None:
+            not_wrapped.append(name)
+            continue
+        if name in servers and not force:
+            skipped.append(name)
+        else:
+            servers[name] = unwrapped
+            imported.append(name)
+
+    _save_config(config_path, config)
+
+    if not mcp_servers:
+        console.print("[dim]No servers found in Claude Desktop config.[/dim]")
+        return
+    if imported:
+        names = ", ".join(f"[bold]{n}[/bold]" for n in imported)
+        console.print(f"[green]✓[/green] Imported {len(imported)} server(s): {names}")
+    if skipped:
+        names = ", ".join(f"[bold]{n}[/bold]" for n in skipped)
+        console.print(
+            f"[yellow]![/yellow] Skipped {len(skipped)} existing server(s): {names}\n"
+            "  Use [bold]--force[/bold] to overwrite."
+        )
+    if not_wrapped:
+        names = ", ".join(f"[bold]{n}[/bold]" for n in not_wrapped)
+        console.print(f"[dim]Skipped {len(not_wrapped)} non-wrapped server(s): {names}[/dim]")
 
 
 @mcp.command("status")
