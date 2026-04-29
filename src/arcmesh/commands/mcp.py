@@ -238,7 +238,7 @@ def _save_config(config_path: Path, config: dict) -> None:
 
 @click.group()
 def mcp():
-    """🚀 Turn your project into an AI workspace:
+    """Turn your project into an AI workspace:
 
     \b
       mcp setup
