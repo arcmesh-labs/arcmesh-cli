@@ -238,7 +238,17 @@ def _save_config(config_path: Path, config: dict) -> None:
 
 @click.group()
 def mcp():
-    """Manage MCP (Model Context Protocol) servers."""
+    """🚀 Turn your project into an AI workspace:
+
+    \b
+      mcp setup
+
+    \b
+    Advanced:
+      mcp add     Add custom MCP server
+      mcp sync    Sync servers to Claude Desktop
+      mcp status  Show active servers
+    """
 
 
 @mcp.command("init")
@@ -507,7 +517,13 @@ def setup(force: bool, verbose: bool):
     server_path = cwd / MCP_DIR / "server.py"
 
     if config_path.exists() and not force:
-        console.print("Already set up.")
+        console.print(
+            "[green]✅ Already set up[/green]\n\n"
+            "AI workspace is ready. Try asking Claude:\n"
+            '  "Explain this repo"\n'
+            '  "Find all API endpoints"\n'
+            '  "Where is authentication handled?"'
+        )
         return
 
     if verbose:
@@ -528,12 +544,16 @@ def setup(force: bool, verbose: bool):
     }
     _save_config(config_path, config)
 
+    desktop_found = False
+    desktop_updated = False
+
     try:
         desktop_path = _claude_desktop_config_path()
+        desktop_found = desktop_path.exists()
     except RuntimeError:
         desktop_path = None
 
-    if desktop_path and desktop_path.exists():
+    if desktop_found:
         if verbose:
             console.print(f"[dim]Syncing to Claude Desktop config at {desktop_path}[/dim]")
         try:
@@ -555,15 +575,50 @@ def setup(force: bool, verbose: bool):
             if force or project_name not in mcp_servers:
                 mcp_servers[project_name] = entry
                 _save_config(desktop_path, desktop_config)
+            desktop_updated = True
     elif verbose:
         console.print("[dim]Claude Desktop config not found, skipping sync[/dim]")
+
+    # Sanity checks
+    if not config_path.exists():
+        console.print(
+            "[red]❌ Setup incomplete[/red]\n\n"
+            "Reason:\n  Internal error writing config\n\n"
+            "Fix:\n  Check write permissions for the current directory"
+        )
+        return
+    if not server_path.exists():
+        console.print(
+            "[red]❌ Setup incomplete[/red]\n\n"
+            "Reason:\n  Internal error writing server script\n\n"
+            "Fix:\n  Check write permissions for the .mcp/ directory"
+        )
+        return
+    if not desktop_found:
+        console.print(
+            "[red]❌ Setup incomplete[/red]\n\n"
+            "Reason:\n  Claude Desktop config not found — make sure Claude Desktop is installed\n\n"
+            "Fix:\n  Install Claude Desktop, then re-run: arcmesh mcp setup --force"
+        )
+        return
+    if not desktop_updated:
+        console.print(
+            "[red]❌ Setup incomplete[/red]\n\n"
+            "Reason:\n  Could not write to Claude Desktop config\n\n"
+            "Fix:\n  Check that the Claude Desktop config file is valid JSON and is writable"
+        )
+        return
 
     console.print(f"\n[green]✅ AI workspace ready[/green]\n")
     console.print(f"Project:    {project_name}")
     console.print(f"MCP server: .mcp/server.py")
     console.print(f"\nNext steps:")
     console.print(f"  1. Restart Claude Desktop")
-    console.print(f'  2. Try: "Explain this repo"')
+    console.print(f"  2. Open this folder in Claude Desktop")
+    console.print(f"\nTry asking:")
+    console.print(f'  "Explain this repo"')
+    console.print(f'  "Find all API endpoints"')
+    console.print(f'  "Where is authentication handled?"')
 
 
 @mcp.command("status")
