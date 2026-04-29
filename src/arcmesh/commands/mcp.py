@@ -496,6 +496,76 @@ def unwrap(force: bool):
         console.print(f"[dim]Skipped {len(not_wrapped)} non-wrapped server(s): {names}[/dim]")
 
 
+@mcp.command("setup")
+@click.option("--force", is_flag=True, help="Overwrite existing setup.")
+@click.option("--verbose", is_flag=True, help="Print each internal step.")
+def setup(force: bool, verbose: bool):
+    """Initialize an AI workspace with MCP server for the current project."""
+    cwd = Path.cwd()
+    project_name = cwd.name
+    config_path = _config_path(cwd)
+    server_path = cwd / MCP_DIR / "server.py"
+
+    if config_path.exists() and not force:
+        console.print("Already set up.")
+        return
+
+    if verbose:
+        console.print(f"[dim]Creating {config_path}[/dim]")
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(DEFAULT_CONFIG, indent=2) + "\n")
+
+    if verbose:
+        console.print(f"[dim]Generating {server_path}[/dim]")
+    server_path.write_text(_FASTMCP_TEMPLATE.format(name=project_name, project_path=cwd))
+
+    if verbose:
+        console.print(f"[dim]Adding server '{project_name}' to .mcp/config.json[/dim]")
+    config = json.loads(config_path.read_text())
+    config.setdefault("servers", {})[project_name] = {
+        "command": "python",
+        "args": [str(server_path)],
+    }
+    _save_config(config_path, config)
+
+    try:
+        desktop_path = _claude_desktop_config_path()
+    except RuntimeError:
+        desktop_path = None
+
+    if desktop_path and desktop_path.exists():
+        if verbose:
+            console.print(f"[dim]Syncing to Claude Desktop config at {desktop_path}[/dim]")
+        try:
+            desktop_config = json.loads(desktop_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            desktop_config = None
+
+        if desktop_config is not None:
+            mcp_servers = desktop_config.setdefault("mcpServers", {})
+            entry: dict = {"command": "python", "args": [str(server_path)]}
+            if _is_wsl():
+                try:
+                    distro = _wsl_distro_name()
+                    entry = _wrap_for_wsl(entry, distro)
+                    if verbose:
+                        console.print(f"[dim]Wrapped for WSL distro: {distro}[/dim]")
+                except RuntimeError:
+                    pass
+            if force or project_name not in mcp_servers:
+                mcp_servers[project_name] = entry
+                _save_config(desktop_path, desktop_config)
+    elif verbose:
+        console.print("[dim]Claude Desktop config not found, skipping sync[/dim]")
+
+    console.print(f"\n[green]✅ AI workspace ready[/green]\n")
+    console.print(f"Project:    {project_name}")
+    console.print(f"MCP server: .mcp/server.py")
+    console.print(f"\nNext steps:")
+    console.print(f"  1. Restart Claude Desktop")
+    console.print(f'  2. Try: "Explain this repo"')
+
+
 @mcp.command("status")
 def status():
     """Show active MCP servers from local config."""
