@@ -5,7 +5,7 @@
 ```bash
 pip install arcmesh
 cd your-project
-mcp setup
+arcmesh mcp setup
 ```
 
 Restart Claude Desktop. Done.
@@ -50,14 +50,14 @@ Most people never need this. But if you want full control:
 
 | Command | What it does |
 |---|---|
-| `mcp init` | Initialize config without generating a server |
-| `mcp add` | Add a custom MCP server (wizard or inline) |
-| `mcp sync` | Push local config to Claude Desktop |
-| `mcp status` | Show configured servers |
-| `mcp remove` | Remove a server |
-| `mcp unwrap` | Import WSL-wrapped servers back to local config |
+| `arcmesh mcp init` | Initialize config without generating a server |
+| `arcmesh mcp add` | Add a custom MCP server (wizard or inline) |
+| `arcmesh mcp sync` | Push local config to Claude Desktop |
+| `arcmesh mcp status` | Show configured servers |
+| `arcmesh mcp remove` | Remove a server |
+| `arcmesh mcp unwrap` | Import WSL-wrapped servers back to local config |
 
-Run `mcp --help` to see everything.
+Run `arcmesh mcp --help` to see everything.
 
 ---
 
