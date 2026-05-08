@@ -28,3 +28,4 @@ Thumbs.db
 
 # Project-specific
 .mcp/
+src/*.egg-info/
