@@ -1,59 +1,23 @@
 # ArcMesh CLI
 
-Turn any repo into something AI can understand in 10 seconds.
+**One command. Your codebase, AI-ready.**
 
----
-
-## Install & Setup
-
-**From PyPI:**
 ```bash
 pip install arcmesh
-```
-
-**From GitHub :**
-```
-pip install git+https://github.com/arcmesh-labs/arcmesh-cli.git
-```
-
-Use it in any project
-```bash
 cd your-project
 mcp setup
 ```
-Restart Claude Desktop.
+
+Restart Claude Desktop. Done.
 
 ---
 
-## After setup
-
-Your codebase is now accessible to Claude.
-
-Try asking:
-
-* "Explain this repo"
-* "Find all API endpoints"
-* "Where is authentication handled?"
-* "What does this project do?"
-
----
-
-## What this gives you
-
-Instead of manually wiring AI to your codebase, ArcMesh does it automatically.
-
-One command:
-
-### your project → AI-readable workspace
-
----
-## How it works (simple)
+## What it does
 
 ArcMesh creates a local MCP server for your project and connects it to Claude Desktop automatically.
 
-No configuration. No decisions.
+No config files. No decisions. No path issues.
 
-## Output example
 ```bash
 ✅ AI workspace ready
 
@@ -62,29 +26,21 @@ MCP server: .mcp/server.py
 
 Next steps:
   1. Restart Claude Desktop
-  2. Open this folder
+  2. Open this folder in Claude Desktop
 
 Try asking:
   "Explain this repo"
-  ```
----
-## Why this exists
-
-Connecting AI to a codebase today usually requires:
-
-* manual MCP setup
-* config files
-* path issues
-* repetitive per-project setup
-
-ArcMesh removes all of that.
+  "Find all API endpoints"
+  "Where is authentication handled?"
+```
 
 ---
 
 ## Requirements
-* Python 3.10+
-* Claude Desktop
-* Mac, Windows, or WSL
+
+- Python 3.10+
+- Claude Desktop
+- Mac, Windows, or WSL
 
 ---
 
@@ -104,11 +60,12 @@ Most people never need this. But if you want full control:
 Run `mcp --help` to see everything.
 
 ---
+
 ## Philosophy
 
-There should be one default way to make a codebase AI-ready:
+There should be one default way to make a codebase AI-ready.
 
-### One command. No decisions.
+One command. No decisions.
 
 ---
 
