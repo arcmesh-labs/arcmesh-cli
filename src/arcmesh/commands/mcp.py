@@ -190,7 +190,7 @@ def _unwrap_wsl(cfg: dict) -> "dict | None":
     return {**cfg, "command": command, "args": cmd_args}
 
 
-def _wsl_claude_desktop_config_path() -> Path:
+def _wsl_claude_desktop_config_path() -> "tuple[Path, list[str]]":
     try:
         result = subprocess.run(
             ["cmd.exe", "/c", "echo", "%USERNAME%"],
@@ -203,19 +203,40 @@ def _wsl_claude_desktop_config_path() -> Path:
     if not windows_user or windows_user == "%USERNAME%":
         raise RuntimeError("Could not determine Windows username from cmd.exe")
 
-    return Path(f"/mnt/c/Users/{windows_user}/AppData/Roaming/Claude/claude_desktop_config.json")
+    standard = Path(f"/mnt/c/Users/{windows_user}/AppData/Roaming/Claude/claude_desktop_config.json")
+    store_glob = f"/mnt/c/Users/{windows_user}/AppData/Local/Packages/Claude_*/LocalCache/Roaming/Claude/claude_desktop_config.json"
+    if standard.exists():
+        return standard, [str(standard)]
+    store_matches = sorted(Path(f"/mnt/c/Users/{windows_user}/AppData/Local/Packages").glob(
+        "Claude_*/LocalCache/Roaming/Claude/claude_desktop_config.json"
+    ))
+    if store_matches:
+        return store_matches[0], [str(standard), str(store_matches[0])]
+    return standard, [str(standard), store_glob]
 
 
-def _claude_desktop_config_path() -> Path:
+def _claude_desktop_config_path() -> "tuple[Path, list[str]]":
     system = platform.system()
     if system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+        p = Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+        return p, [str(p)]
     if system == "Windows":
         appdata = os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")
-        return Path(appdata) / "Claude" / "claude_desktop_config.json"
+        localappdata = os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")
+        standard = Path(appdata) / "Claude" / "claude_desktop_config.json"
+        store_glob = str(Path(localappdata) / "Packages" / "Claude_*" / "LocalCache" / "Roaming" / "Claude" / "claude_desktop_config.json")
+        if standard.exists():
+            return standard, [str(standard)]
+        store_matches = sorted(Path(localappdata).glob(
+            "Packages/Claude_*/LocalCache/Roaming/Claude/claude_desktop_config.json"
+        ))
+        if store_matches:
+            return store_matches[0], [str(standard), str(store_matches[0])]
+        return standard, [str(standard), store_glob]
     if _is_wsl():
         return _wsl_claude_desktop_config_path()
-    return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+    p = Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+    return p, [str(p)]
 
 
 def _load_config(config_path: Path) -> dict:
@@ -271,7 +292,7 @@ def init(force: bool):
     console.print(f"[green]✓[/green] Initialized MCP config at [bold]{config_path}[/bold]")
 
     try:
-        desktop_path = _claude_desktop_config_path()
+        desktop_path, _ = _claude_desktop_config_path()
     except RuntimeError as exc:
         console.print(f"\n[red]Could not locate Claude Desktop config:[/red] {exc}")
         return
@@ -401,7 +422,7 @@ def sync(force: bool):
     config = _load_config(config_path)
 
     try:
-        desktop_path = _claude_desktop_config_path()
+        desktop_path, _ = _claude_desktop_config_path()
     except RuntimeError as exc:
         console.print(f"[red]Could not locate Claude Desktop config:[/red] {exc}")
         raise click.Abort()
@@ -456,7 +477,7 @@ def sync(force: bool):
 def unwrap(force: bool):
     """Import WSL-wrapped servers from Claude Desktop config into .mcp/config.json."""
     try:
-        desktop_path = _claude_desktop_config_path()
+        desktop_path, _ = _claude_desktop_config_path()
     except RuntimeError as exc:
         console.print(f"[red]Could not locate Claude Desktop config:[/red] {exc}")
         raise click.Abort()
@@ -509,7 +530,10 @@ def unwrap(force: bool):
 @mcp.command("setup")
 @click.option("--force", is_flag=True, help="Overwrite existing setup.")
 @click.option("--verbose", is_flag=True, help="Print each internal step.")
-def setup(force: bool, verbose: bool):
+@click.option("--config-path", "desktop_config_path", default=None, metavar="PATH",
+              type=click.Path(path_type=Path),
+              help="Path to Claude Desktop config file (overrides auto-detection).")
+def setup(force: bool, verbose: bool, desktop_config_path: "Path | None"):
     """Initialize an AI workspace with MCP server for the current project."""
     cwd = Path.cwd()
     project_name = cwd.name
@@ -546,12 +570,18 @@ def setup(force: bool, verbose: bool):
 
     desktop_found = False
     desktop_updated = False
+    checked_paths: list[str] = []
 
-    try:
-        desktop_path = _claude_desktop_config_path()
+    if desktop_config_path is not None:
+        desktop_path: "Path | None" = desktop_config_path
         desktop_found = desktop_path.exists()
-    except RuntimeError:
-        desktop_path = None
+    else:
+        try:
+            desktop_path, checked_paths = _claude_desktop_config_path()
+            desktop_found = desktop_path.exists()
+        except RuntimeError:
+            desktop_path = None
+            desktop_found = False
 
     if desktop_found:
         if verbose:
@@ -595,11 +625,24 @@ def setup(force: bool, verbose: bool):
         )
         return
     if not desktop_found:
-        console.print(
-            "[red]❌ Setup incomplete[/red]\n\n"
-            "Reason:\n  Claude Desktop config not found — make sure Claude Desktop is installed\n\n"
-            "Fix:\n  Install Claude Desktop, then re-run: arcmesh mcp setup --force"
-        )
+        if desktop_config_path is not None:
+            console.print(
+                "[red]❌ Setup incomplete[/red]\n\n"
+                f"Reason:\n  Config not found at specified path:\n    {desktop_config_path}\n\n"
+                "Fix:\n  Check the path and try again"
+            )
+        else:
+            paths_lines = "".join(f"\n    {p}" for p in checked_paths) if checked_paths else (f"\n    {desktop_path}" if desktop_path else "")
+            console.print(
+                "[red]❌ Setup incomplete[/red]\n\n"
+                f"Reason:\n  Claude Desktop config not found\n\n"
+                f"Paths checked:{paths_lines}\n\n"
+                "Fix:\n"
+                "  • If Claude Desktop is not installed, install it and open it at least once\n"
+                "  • If it is already installed, open Claude Desktop to generate its config\n"
+                "  • Or specify the config location manually:\n"
+                '      arcmesh mcp setup --config-path "/path/to/claude_desktop_config.json"'
+            )
         return
     if not desktop_updated:
         console.print(
